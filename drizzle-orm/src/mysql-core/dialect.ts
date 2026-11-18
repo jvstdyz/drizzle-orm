@@ -24,6 +24,7 @@ import { getTableName, getTableUniqueName, Table } from '~/table.ts';
 import { type Casing, orderSelectedFields, type UpdateSet } from '~/utils.ts';
 import { ViewBaseConfig } from '~/view-common.ts';
 import { MySqlColumn } from './columns/common.ts';
+import { MySqlCustomColumn } from './columns/custom.ts';
 import type { MySqlDeleteConfig } from './query-builders/delete.ts';
 import type { MySqlInsertConfig } from './query-builders/insert.ts';
 import type {
@@ -245,7 +246,24 @@ export class MySqlDialect {
 					chunk.push(sql` as ${sql.identifier(field.fieldAlias)}`);
 				}
 			} else if (is(field, Column)) {
-				if (isSingleTable) {
+				const selectSql = is(field, MySqlCustomColumn) ? field.getSelectSQL() : undefined;
+
+				if (selectSql) {
+					if (isSingleTable) {
+						chunk.push(
+							new SQL(
+								selectSql.queryChunks.map((c) => {
+									if (is(c, MySqlColumn)) {
+										return sql.identifier(this.casing.getColumnCasing(c));
+									}
+									return c;
+								}),
+							),
+						);
+					} else {
+						chunk.push(selectSql);
+					}
+				} else if (isSingleTable) {
 					chunk.push(sql.identifier(this.casing.getColumnCasing(field)));
 				} else {
 					chunk.push(field);
@@ -896,6 +914,8 @@ export class MySqlDialect {
 					selection.map(({ field, tsKey, isJson }) =>
 						isJson
 							? sql`${sql.identifier(`${tableAlias}_${tsKey}`)}.${sql.identifier('data')}`
+							: is(field, MySqlCustomColumn)
+							? field.getSelectSQL() ?? field
 							: is(field, SQL.Aliased)
 							? field.sql
 							: field
@@ -1235,13 +1255,19 @@ export class MySqlDialect {
 		if (nestedQueryRelation) {
 			let field = sql`json_array(${
 				sql.join(
-					selection.map(({ field }) =>
-						is(field, MySqlColumn)
+					selection.map(({ field }) => {
+						if (is(field, MySqlCustomColumn)) {
+							const selectSql = field.getSelectSQL();
+							if (selectSql) {
+								return selectSql;
+							}
+						}
+						return is(field, MySqlColumn)
 							? sql.identifier(this.casing.getColumnCasing(field))
 							: is(field, SQL.Aliased)
 							? field.sql
-							: field
-					),
+							: field;
+					}),
 					sql`, `,
 				)
 			})`;
