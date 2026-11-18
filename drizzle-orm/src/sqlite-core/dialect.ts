@@ -20,7 +20,7 @@ import {
 import type { Name, Placeholder } from '~/sql/index.ts';
 import { and, eq } from '~/sql/index.ts';
 import { Param, type QueryWithTypings, SQL, sql, type SQLChunk } from '~/sql/sql.ts';
-import { SQLiteColumn } from '~/sqlite-core/columns/index.ts';
+import { SQLiteColumn, SQLiteCustomColumn } from '~/sqlite-core/columns/index.ts';
 import type {
 	AnySQLiteSelectQueryBuilder,
 	SQLiteDeleteConfig,
@@ -209,7 +209,23 @@ export abstract class SQLiteDialect {
 				}
 			} else if (is(field, Column)) {
 				const tableName = field.table[Table.Symbol.Name];
-				if (field.columnType === 'SQLiteNumericBigInt') {
+				const selectSql = is(field, SQLiteCustomColumn) ? field.getSelectSQL() : undefined;
+				if (selectSql) {
+					if (isSingleTable) {
+						chunk.push(
+							new SQL(
+								selectSql.queryChunks.map((c) => {
+									if (is(c, Column)) {
+										return sql.identifier(this.casing.getColumnCasing(c));
+									}
+									return c;
+								}),
+							),
+						);
+					} else {
+						chunk.push(selectSql);
+					}
+				} else if (field.columnType === 'SQLiteNumericBigInt') {
 					if (isSingleTable) {
 						chunk.push(
 							sql`cast(${sql.identifier(this.casing.getColumnCasing(field))} as text)`,
@@ -837,13 +853,19 @@ export abstract class SQLiteDialect {
 		if (nestedQueryRelation) {
 			let field = sql`json_array(${
 				sql.join(
-					selection.map(({ field }) =>
-						is(field, SQLiteColumn)
+					selection.map(({ field }) => {
+						if (is(field, SQLiteCustomColumn)) {
+							const selectSql = field.getSelectSQL();
+							if (selectSql) {
+								return selectSql;
+							}
+						}
+						return is(field, SQLiteColumn)
 							? sql.identifier(this.casing.getColumnCasing(field))
 							: is(field, SQL.Aliased)
 							? field.sql
-							: field
-					),
+							: field;
+					}),
 					sql`, `,
 				)
 			})`;
