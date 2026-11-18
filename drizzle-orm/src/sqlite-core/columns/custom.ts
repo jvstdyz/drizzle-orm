@@ -63,6 +63,7 @@ export class SQLiteCustomColumn<T extends ColumnBaseConfig<'custom', 'SQLiteCust
 	private sqlName: string;
 	private mapTo?: (value: T['data']) => T['driverParam'];
 	private mapFrom?: (value: T['driverParam']) => T['data'];
+	private selectFrom?: CustomTypeParams<any>['selectFromDb'];
 
 	constructor(
 		table: AnySQLiteTable<{ name: T['tableName'] }>,
@@ -72,6 +73,7 @@ export class SQLiteCustomColumn<T extends ColumnBaseConfig<'custom', 'SQLiteCust
 		this.sqlName = config.customTypeParams.dataType(config.fieldConfig);
 		this.mapTo = config.customTypeParams.toDriver;
 		this.mapFrom = config.customTypeParams.fromDriver;
+		this.selectFrom = config.customTypeParams.selectFromDb;
 	}
 
 	getSQLType(): string {
@@ -84,6 +86,10 @@ export class SQLiteCustomColumn<T extends ColumnBaseConfig<'custom', 'SQLiteCust
 
 	override mapToDriverValue(value: T['data']): T['driverParam'] {
 		return typeof this.mapTo === 'function' ? this.mapTo(value) : value as T['data'];
+	}
+
+	getSelectSQL(): SQL | undefined {
+		return typeof this.selectFrom === 'function' ? this.selectFrom(this) : undefined;
 	}
 }
 
@@ -195,6 +201,20 @@ export interface CustomTypeParams<T extends CustomTypeValues> {
 	 * ```
 	 */
 	fromDriver?: (value: T['driverData']) => T['data'];
+
+	/**
+	 * Optional function, that wraps the column in a custom SQL expression whenever the column is selected
+	 * @example
+	 * For example, when a blob is stored in the database but should be read back as its hex representation
+	 * ```
+	 * selectFromDb(column) {
+	 * 	 return sql`hex(${column})`;
+	 * }
+	 * ```
+	 * The value produced by the expression is passed to {@link CustomTypeParams.fromDriver} for decoding,
+	 * the same way a value returned by the driver would be
+	 */
+	selectFromDb?: (column: SQLiteColumn) => SQL;
 }
 
 /**
