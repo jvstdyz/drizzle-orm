@@ -6,6 +6,7 @@ import { DrizzleError } from '~/errors.ts';
 import type { MigrationConfig, MigrationMeta } from '~/migrator.ts';
 import {
 	PgColumn,
+	PgCustomColumn,
 	PgDate,
 	PgDateString,
 	PgJson,
@@ -242,7 +243,24 @@ export class PgDialect {
 						chunk.push(sql` as ${sql.identifier(field.fieldAlias)}`);
 					}
 				} else if (is(field, Column)) {
-					if (isSingleTable) {
+					const selectSql = is(field, PgCustomColumn) ? field.getSelectSQL() : undefined;
+
+					if (selectSql) {
+						if (isSingleTable) {
+							chunk.push(
+								new SQL(
+									selectSql.queryChunks.map((c) => {
+										if (is(c, PgColumn)) {
+											return sql.identifier(this.casing.getColumnCasing(c));
+										}
+										return c;
+									}),
+								),
+							);
+						} else {
+							chunk.push(selectSql);
+						}
+					} else if (isSingleTable) {
 						chunk.push(sql.identifier(this.casing.getColumnCasing(field)));
 					} else {
 						chunk.push(field);
@@ -1358,6 +1376,8 @@ export class PgDialect {
 					selection.map(({ field, tsKey, isJson }) =>
 						isJson
 							? sql`${sql.identifier(`${tableAlias}_${tsKey}`)}.${sql.identifier('data')}`
+							: is(field, PgCustomColumn)
+							? field.getSelectSQL() ?? field
 							: is(field, SQL.Aliased)
 							? field.sql
 							: field
